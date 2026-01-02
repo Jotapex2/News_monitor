@@ -152,24 +152,31 @@ def perform_search(keyword_to_search, days, categories, use_google, use_bing):
         # Análisis de sentimiento
         with st.spinner("Analizando sentimientos..."):
             sentiments = []
-            progress_bar = st.progress(0)
-            for idx, row in df.iterrows():
-                text = f"{row['title']} {row.get('summary', '')}"
-                sentiment_result = analyzer.analyze_sentiment(text)
-                sentiments.append(sentiment_result['sentiment'])
-                progress_bar.progress((idx + 1) / len(df))
-            df['sentiment'] = sentiments
-            progress_bar.empty()
-        
+            # AGREGADO: Verificar que df no esté vacío antes de crear progress_bar
+            if len(df) > 0:
+                progress_bar = st.progress(0)
+                for idx, row in df.iterrows():
+                    text = f"{row['title']} {row.get('summary', '')}"
+                    sentiment_result = analyzer.analyze_sentiment(text)
+                    sentiments.append(sentiment_result['sentiment'])
+                    progress_bar.progress((idx + 1) / len(df))
+                df['sentiment'] = sentiments
+                progress_bar.empty()
+            else:
+                df['sentiment'] = []
+
         # Resúmenes con IA (primeros 5)
         with st.spinner("Generando resúmenes con IA..."):
             df['summary_ai'] = df.get('summary', '')
-            for idx in range(min(5, len(df))):
-                row = df.iloc[idx]
-                summary = analyzer.summarize_article(row['title'], row.get('summary', ''))
-                df.at[df.index[idx], 'summary_ai'] = summary
+            # AGREGADO: Verificar antes de iterar
+            if len(df) > 0:
+                for idx in range(min(5, len(df))):
+                    row = df.iloc[idx]
+                    summary = analyzer.summarize_article(row['title'], row.get('summary', ''))
+                    df.at[df.index[idx], 'summary_ai'] = summary
         
         return df
+
 
 # Ejecutar búsqueda
 if search_button and keyword:
