@@ -8,8 +8,15 @@ from modules.free_news_aggregator import FreeNewsAggregator
 from modules.deepseek_analyzer import DeepSeekAnalyzer
 import os
 from dotenv import load_dotenv
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 load_dotenv()
+
+# Configuración de email
+EMAIL_SENDER = st.secrets.get("email_sender", "")
+EMAIL_PASSWORD = st.secrets.get("email_password", "")
 
 # Configuración de página
 st.set_page_config(
@@ -124,7 +131,110 @@ with st.container():
     st.markdown("**💡 Sugerencias:** reforma constitucional | inflación | sequía | minería | educación | pensiones")
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Función de búsqueda
+# Nueva función para análisis de emociones
+def analyze_emotion_with_deepseek(text):
+    """
+    Analiza las emociones de un texto usando DeepSeek API
+    """
+    try:
+        prompt = f"""Analiza las emociones del siguiente texto y responde SOLO con UNA palabra de estas opciones: RISA, IRA, MIEDO, TRISTEZA, DISGUSTO, SORPRESA, NEUTRAL.
+
+Texto: {text[:500]}
+
+Emoción:"""
+
+        response = analyzer.client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": "Eres un experto en análisis de emociones. Responde siempre con una sola palabra en mayúsculas."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=10
+        )
+        
+        emotion = response.choices[0].message.content.strip().upper()
+        valid_emotions = ["RISA", "IRA", "MIEDO", "TRISTEZA", "DISGUSTO", "SORPRESA", "NEUTRAL"]
+        if emotion in valid_emotions:
+            return emotion
+        else:
+            return 'NEUTRAL'
+    except Exception as e:
+        print(f"Error en análisis de emociones: {e}")
+        return 'DESCONOCIDO'
+
+# Nueva función para generar resumen
+def generate_analysis_summary(df, keyword):
+    """
+    Genera un resumen consolidado
+    """
+    if df.empty:
+        return "No hay datos para generar el resumen."
+    
+    summary_parts = []
+    summary_parts.append(f"📊 RESUMEN DE ANÁLISIS: '{keyword}'")
+    summary_parts.append(f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+    summary_parts.append(f"Total de noticias analizadas: {len(df)}\n")
+    
+    if 'sentiment' in df.columns:
+        sentiment_counts = df['sentiment'].value_counts()
+        summary_parts.append("🎭 ANÁLISIS DE SENTIMIENTOS:")
+        for sentiment, count in sentiment_counts.items():
+            percentage = (count / len(df)) * 100
+            summary_parts.append(f"  • {sentiment}: {count} ({percentage:.1f}%)")
+        summary_parts.append("")
+    
+    if 'emotion' in df.columns:
+        emotion_counts = df['emotion'].value_counts()
+        summary_parts.append("😊 ANÁLISIS DE EMOCIONES:")
+        for emotion, count in emotion_counts.items():
+            percentage = (count / len(df)) * 100
+            summary_parts.append(f"  • {emotion}: {count} ({percentage:.1f}%)")
+        summary_parts.append("")
+    
+    summary_parts.append("📰 DETALLE DE NOTICIAS:\n")
+    
+    for idx, row in df.iterrows():
+        title = row.get('title', 'Sin título')
+        source = row.get('source', 'Fuente desconocida')
+        link = row.get('link', 'Sin enlace')
+        sentiment = row.get('sentiment', 'N/A')
+        emotion = row.get('emotion', 'N/A')
+        
+        summary_parts.append(f"{'='*80}")
+        summary_parts.append(f"Noticia #{idx + 1}")
+        summary_parts.append(f"Titular: {title}")
+        summary_parts.append(f"Medio: {source}")
+        summary_parts.append(f"Sentimiento: {sentiment}")
+        summary_parts.append(f"Emoción: {emotion}")
+        summary_parts.append(f"Link: {link}")
+        summary_parts.append("")
+    
+    return "\n".join(summary_parts)
+
+# Nueva función para enviar email
+def send_email_summary(recipient_email, subject, summary_content):
+    """
+    Envía el resumen por email
+    """
+    try:
+        message = MIMEMultipart()
+        message["From"] = EMAIL_SENDER
+        message["To"] = recipient_email
+        message["Subject"] = subject
+        message.attach(MIMEText(summary_content, "plain", "utf-8"))
+        
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+        server.sendmail(EMAIL_SENDER, recipient_email, message.as_string())
+        server.quit()
+        
+        return True, "Email enviado exitosamente ✅"
+    except Exception as e:
+        return False, f"Error al enviar email: {str(e)}"
+
+# Función de búsqueda MODIFICADA
 def perform_search(keyword_to_search, days, categories, use_google, use_bing):
     with st.spinner(f"🔍 Buscando '{keyword_to_search}' en múltiples fuentes..."):
         
@@ -149,26 +259,36 @@ def perform_search(keyword_to_search, days, categories, use_google, use_bing):
         if df.empty:
             return df
         
-        # Análisis de sentimiento
-        with st.spinner("Analizando sentimientos..."):
+        # Análisis de sentimiento y emociones
+        with st.spinner("Analizando sentimientos y emociones..."):
             sentiments = []
-            # AGREGADO: Verificar que df no esté vacío antes de crear progress_bar
+            emotions = []
+            
             if len(df) > 0:
                 progress_bar = st.progress(0)
                 for idx, row in df.iterrows():
                     text = f"{row['title']} {row.get('summary', '')}"
+                    
+                    # Análisis de sentimiento
                     sentiment_result = analyzer.analyze_sentiment(text)
                     sentiments.append(sentiment_result['sentiment'])
+                    
+                    # Análisis de emociones
+                    emotion = analyze_emotion_with_deepseek(text)
+                    emotions.append(emotion)
+                    
                     progress_bar.progress((idx + 1) / len(df))
+                
                 df['sentiment'] = sentiments
+                df['emotion'] = emotions
                 progress_bar.empty()
             else:
                 df['sentiment'] = []
+                df['emotion'] = []
 
         # Resúmenes con IA (primeros 5)
         with st.spinner("Generando resúmenes con IA..."):
             df['summary_ai'] = df.get('summary', '')
-            # AGREGADO: Verificar antes de iterar
             if len(df) > 0:
                 for idx in range(min(5, len(df))):
                     row = df.iloc[idx]
@@ -176,7 +296,6 @@ def perform_search(keyword_to_search, days, categories, use_google, use_bing):
                     df.at[df.index[idx], 'summary_ai'] = summary
         
         return df
-
 
 # Ejecutar búsqueda
 if search_button and keyword:
@@ -273,6 +392,21 @@ if not df.empty and 'current_keyword' in st.session_state:
         fig.update_layout(showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
     
+    # Nueva visualización de emociones
+    if 'emotion' in df.columns:
+        st.subheader("😊 Distribución de Emociones")
+        emotion_counts = df['emotion'].value_counts()
+        fig = px.bar(
+            x=emotion_counts.values,
+            y=emotion_counts.index,
+            orientation='h',
+            labels={'x': 'Cantidad', 'y': 'Emoción'},
+            color=emotion_counts.values,
+            color_continuous_scale='Viridis'
+        )
+        fig.update_layout(showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+    
     # Timeline
     st.subheader("📅 Evolución Temporal")
     df['date'] = pd.to_datetime(df['published'], errors='coerce')
@@ -339,20 +473,22 @@ if not df.empty and 'current_keyword' in st.session_state:
     # Mostrar noticias
     for idx, row in filtered_df.head(50).iterrows():
         sentiment_emoji = {"POSITIVO": "😊", "NEGATIVO": "😟", "NEUTRAL": "😐"}
+        emotion_emoji = {"RISA": "😂", "IRA": "😠", "MIEDO": "😨", "TRISTEZA": "😢", 
+                        "DISGUSTO": "🤢", "SORPRESA": "😲", "NEUTRAL": "😐"}
         
-        # Resaltar keyword
-        title_display = row['title'].replace(
-            keyword_searched, 
-            f"**{keyword_searched}**"
-        )
+        title_display = row['title'].replace(keyword_searched, f"**{keyword_searched}**")
         
         matches_info = ""
         if 'keyword_matches' in row and row['keyword_matches'] > 0:
             matches_info = f" | {int(row['keyword_matches'])} menciones"
         
+        emotion_info = ""
+        if 'emotion' in row:
+            emotion_info = f" | {emotion_emoji.get(row['emotion'], '😐')} {row['emotion']}"
+        
         with st.expander(
             f"{sentiment_emoji.get(row['sentiment'], '📰')} {row['source']} | "
-            f"{row['sentiment']}{matches_info}"
+            f"{row['sentiment']}{emotion_info}{matches_info}"
         ):
             st.markdown(f"### {title_display}")
             
@@ -361,10 +497,7 @@ if not df.empty and 'current_keyword' in st.session_state:
             with col1:
                 if row.get('summary'):
                     st.markdown("**Resumen:**")
-                    summary_display = row['summary'].replace(
-                        keyword_searched,
-                        f"**{keyword_searched}**"
-                    )
+                    summary_display = row['summary'].replace(keyword_searched, f"**{keyword_searched}**")
                     st.markdown(summary_display)
                 
                 if row.get('summary_ai') and row['summary_ai'] != row.get('summary'):
@@ -375,6 +508,8 @@ if not df.empty and 'current_keyword' in st.session_state:
             
             with col2:
                 st.metric("Sentimiento", row['sentiment'])
+                if 'emotion' in row:
+                    st.metric("Emoción", row['emotion'])
                 if 'keyword_matches' in row:
                     st.metric("Menciones", int(row['keyword_matches']))
                 if pd.notna(row.get('date')):
@@ -382,17 +517,65 @@ if not df.empty and 'current_keyword' in st.session_state:
                 if 'category' in row:
                     st.caption(f"🏷️ {row['category']}")
     
-    # Exportar
+    # Sección de Resumen y Email
     st.markdown("---")
-    col1, col2 = st.columns([1, 3])
+    st.header("📊 Resumen y Exportación")
+    
+    col1, col2 = st.columns(2)
+    
     with col1:
+        if st.button("📋 Generar Resumen Consolidado", use_container_width=True):
+            summary_text = generate_analysis_summary(df, keyword_searched)
+            st.session_state.summary_text = summary_text
+            
+            with st.expander("📊 Ver Resumen Completo", expanded=True):
+                st.text(summary_text)
+    
+    with col2:
         csv = filtered_df.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📥 Descargar CSV",
             data=csv,
             file_name=f"noticias_{keyword_searched}_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv"
+            mime="text/csv",
+            use_container_width=True
         )
+    
+    # Descargar resumen si existe
+    if hasattr(st.session_state, 'summary_text'):
+        st.download_button(
+            label="⬇️ Descargar Resumen",
+            data=st.session_state.summary_text,
+            file_name=f"resumen_analisis_{keyword_searched}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+            mime="text/plain",
+            use_container_width=True
+        )
+        
+        # Sección de envío por email
+        st.divider()
+        st.subheader("📧 Enviar Resumen por Email")
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            recipient_email = st.text_input("Email del destinatario:", placeholder="ejemplo@email.com")
+        with col2:
+            st.write("")
+            st.write("")
+            send_button = st.button("📤 Enviar Email", type="primary", use_container_width=True)
+        
+        if send_button:
+            if not recipient_email:
+                st.error("❌ Por favor ingresa un email válido")
+            elif not EMAIL_SENDER or not EMAIL_PASSWORD:
+                st.error("❌ Configura las credenciales de email en secrets")
+            else:
+                with st.spinner("Enviando email..."):
+                    subject = f"Resumen de Análisis: {keyword_searched}"
+                    success, message = send_email_summary(recipient_email, subject, st.session_state.summary_text)
+                    if success:
+                        st.success(message)
+                    else:
+                        st.error(message)
 
 elif keyword and search_button:
     st.warning(f"⚠️ No se encontraron noticias para '{keyword}'")
