@@ -399,38 +399,46 @@ if not df.empty and 'current_keyword' in st.session_state:
         )
         fig.update_layout(showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
-
-    # GRÁFICO DE EMOCIONES
+        st.write("DEBUG columnas DF:", df.columns.tolist())
+        # GRÁFICO DE EMOCIONES (ROBUSTO)
     st.subheader("😊 Distribución de Emociones")
-    if 'emotion' in df.columns:
-        emotion_counts = df['emotion'].value_counts()
 
-        # Usar colores específicos para cada emoción
-        emotion_colors = {
-            'RISA': '#FFD700',
-            'IRA': '#FF4500',
-            'MIEDO': '#8B008B',
-            'TRISTEZA': '#4169E1',
-            'DISGUSTO': '#228B22',
-            'SORPRESA': '#FF69B4',
-            'NEUTRAL': '#808080',
-            'DESCONOCIDO': '#A9A9A9'
-        }
-
-        colors = [emotion_colors.get(emotion, '#636EFA') for emotion in emotion_counts.index]
-
-        fig = px.bar(
-            x=emotion_counts.values,
-            y=emotion_counts.index,
-            orientation='h',
-            labels={'x': 'Cantidad', 'y': 'Emoción'},
-            title="Emociones Detectadas en las Noticias"
-        )
-        fig.update_traces(marker_color=colors)
-        fig.update_layout(showlegend=False, height=400)
-        st.plotly_chart(fig, use_container_width=True)
+    if 'emotion' not in df.columns:
+        st.warning("No existe la columna 'emotion'. Revisa que se esté creando en perform_search().")
     else:
-        st.warning("No hay datos de emociones disponibles")
+        emotions_clean = df['emotion'].dropna().astype(str).str.upper().str.strip()
+
+        if emotions_clean.empty:
+            st.warning("La columna 'emotion' existe, pero no tiene datos (todo viene vacío/NaN).")
+        else:
+            emotion_counts = emotions_clean.value_counts().reset_index()
+            emotion_counts.columns = ["emotion", "count"]
+
+            emotion_colors = {
+                'RISA': '#FFD700',
+                'IRA': '#FF4500',
+                'MIEDO': '#8B008B',
+                'TRISTEZA': '#4169E1',
+                'DISGUSTO': '#228B22',
+                'SORPRESA': '#FF69B4',
+                'NEUTRAL': '#808080',
+                'DESCONOCIDO': '#A9A9A9'
+            }
+
+            fig = px.bar(
+                emotion_counts,
+                x="count",
+                y="emotion",
+                orientation="h",
+                color="emotion",
+                color_discrete_map=emotion_colors,
+                labels={"count": "Cantidad", "emotion": "Emoción"},
+                title="Emociones Detectadas en las Noticias"
+            )
+
+            fig.update_layout(showlegend=False, height=400)
+            st.plotly_chart(fig, use_container_width=True)
+
 
     # Timeline
     st.subheader("📅 Evolución Temporal")
