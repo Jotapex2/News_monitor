@@ -237,7 +237,7 @@ def send_email_summary(recipient_email, subject, summary_content):
     except Exception as e:
         return False, f"Error al enviar email: {str(e)}"
 
-# Función de búsqueda MODIFICADA
+# Función de búsqueda CORREGIDA
 def perform_search(keyword_to_search, days, categories, use_google, use_bing):
     with st.spinner(f"🔍 Buscando '{keyword_to_search}' en múltiples fuentes..."):
 
@@ -269,7 +269,10 @@ def perform_search(keyword_to_search, days, categories, use_google, use_bing):
 
             if len(df) > 0:
                 progress_bar = st.progress(0)
-                for idx, row in df.iterrows():
+                total_rows = len(df)
+
+                # CORRECCIÓN: Usar enumerate para índice secuencial
+                for idx, (_, row) in enumerate(df.iterrows()):
                     text = f"{row['title']} {row.get('summary', '')}"
 
                     # Análisis de sentimiento
@@ -280,7 +283,9 @@ def perform_search(keyword_to_search, days, categories, use_google, use_bing):
                     emotion = analyze_emotion_with_deepseek(text)
                     emotions.append(emotion)
 
-                    progress_bar.progress((idx + 1) / len(df))
+                    # Actualizar progress bar con índice correcto
+                    progress_value = min(1.0, (idx + 1) / total_rows)
+                    progress_bar.progress(progress_value)
 
                 df['sentiment'] = sentiments
                 df['emotion'] = emotions
@@ -395,7 +400,7 @@ if not df.empty and 'current_keyword' in st.session_state:
         fig.update_layout(showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
 
-    # GRÁFICO DE EMOCIONES - COLOCADO CORRECTAMENTE
+    # GRÁFICO DE EMOCIONES
     st.subheader("😊 Distribución de Emociones")
     if 'emotion' in df.columns:
         emotion_counts = df['emotion'].value_counts()
