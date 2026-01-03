@@ -115,7 +115,7 @@ st.markdown("**Busca términos específicos en medios chilenos e internacionales
 # Caja de búsqueda
 with st.container():
     st.markdown('<div class="search-box">', unsafe_allow_html=True)
-    
+
     col1, col2 = st.columns([4, 1])
     with col1:
         keyword = st.text_input(
@@ -123,11 +123,11 @@ with st.container():
             placeholder="Ej: reforma tributaria, sequía, Gabriel Boric...",
             key="keyword_input"
         )
-    
+
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
         search_button = st.button("🔎 Buscar", type="primary", use_container_width=True)
-    
+
     st.markdown("**💡 Sugerencias:** reforma constitucional | inflación | sequía | minería | educación | pensiones")
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -152,7 +152,7 @@ Emoción:"""
             temperature=0.3,
             max_tokens=10
         )
-        
+
         emotion = response.choices[0].message.content.strip().upper()
         valid_emotions = ["RISA", "IRA", "MIEDO", "TRISTEZA", "DISGUSTO", "SORPRESA", "NEUTRAL"]
         if emotion in valid_emotions:
@@ -164,18 +164,18 @@ Emoción:"""
         return 'DESCONOCIDO'
 
 # Nueva función para generar resumen
-def generate_analysis_summary(df, keyword):
+def generate_analysis_summary(df, keyword, max_news=20):
     """
     Genera un resumen consolidado
     """
     if df.empty:
         return "No hay datos para generar el resumen."
-    
+
     summary_parts = []
     summary_parts.append(f"📊 RESUMEN DE ANÁLISIS: '{keyword}'")
     summary_parts.append(f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
     summary_parts.append(f"Total de noticias analizadas: {len(df)}\n")
-    
+
     if 'sentiment' in df.columns:
         sentiment_counts = df['sentiment'].value_counts()
         summary_parts.append("🎭 ANÁLISIS DE SENTIMIENTOS:")
@@ -183,7 +183,7 @@ def generate_analysis_summary(df, keyword):
             percentage = (count / len(df)) * 100
             summary_parts.append(f"  • {sentiment}: {count} ({percentage:.1f}%)")
         summary_parts.append("")
-    
+
     if 'emotion' in df.columns:
         emotion_counts = df['emotion'].value_counts()
         summary_parts.append("😊 ANÁLISIS DE EMOCIONES:")
@@ -191,16 +191,16 @@ def generate_analysis_summary(df, keyword):
             percentage = (count / len(df)) * 100
             summary_parts.append(f"  • {emotion}: {count} ({percentage:.1f}%)")
         summary_parts.append("")
-    
-    summary_parts.append("📰 DETALLE DE NOTICIAS:\n")
-    
-    for idx, row in df.iterrows():
+
+    summary_parts.append(f"📰 DETALLE DE NOTICIAS (Mostrando las primeras {min(max_news, len(df))} de {len(df)}):\n")
+
+    for idx, row in df.head(max_news).iterrows():
         title = row.get('title', 'Sin título')
         source = row.get('source', 'Fuente desconocida')
         link = row.get('link', 'Sin enlace')
         sentiment = row.get('sentiment', 'N/A')
         emotion = row.get('emotion', 'N/A')
-        
+
         summary_parts.append(f"{'='*80}")
         summary_parts.append(f"Noticia #{idx + 1}")
         summary_parts.append(f"Titular: {title}")
@@ -209,7 +209,10 @@ def generate_analysis_summary(df, keyword):
         summary_parts.append(f"Emoción: {emotion}")
         summary_parts.append(f"Link: {link}")
         summary_parts.append("")
-    
+
+    if len(df) > max_news:
+        summary_parts.append(f"\n... y {len(df) - max_news} noticias más")
+
     return "\n".join(summary_parts)
 
 # Nueva función para enviar email
@@ -223,13 +226,13 @@ def send_email_summary(recipient_email, subject, summary_content):
         message["To"] = recipient_email
         message["Subject"] = subject
         message.attach(MIMEText(summary_content, "plain", "utf-8"))
-        
+
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(EMAIL_SENDER, EMAIL_PASSWORD)
         server.sendmail(EMAIL_SENDER, recipient_email, message.as_string())
         server.quit()
-        
+
         return True, "Email enviado exitosamente ✅"
     except Exception as e:
         return False, f"Error al enviar email: {str(e)}"
@@ -237,10 +240,10 @@ def send_email_summary(recipient_email, subject, summary_content):
 # Función de búsqueda MODIFICADA
 def perform_search(keyword_to_search, days, categories, use_google, use_bing):
     with st.spinner(f"🔍 Buscando '{keyword_to_search}' en múltiples fuentes..."):
-        
+
         # Filtrar fuentes
         filtered_sources = {cat: sources for cat, sources in all_sources.items() if cat in categories}
-        
+
         # Realizar búsqueda
         df = aggregator.aggregate_all_free(
             keyword_to_search, 
@@ -248,37 +251,37 @@ def perform_search(keyword_to_search, days, categories, use_google, use_bing):
             use_google_news=use_google,
             use_bing_news=use_bing
         )
-        
+
         if df.empty:
             return df
-        
+
         # Filtrar por menciones mínimas
         if 'keyword_matches' in df.columns:
             df = df[df['keyword_matches'] >= min_matches]
-        
+
         if df.empty:
             return df
-        
+
         # Análisis de sentimiento y emociones
         with st.spinner("Analizando sentimientos y emociones..."):
             sentiments = []
             emotions = []
-            
+
             if len(df) > 0:
                 progress_bar = st.progress(0)
                 for idx, row in df.iterrows():
                     text = f"{row['title']} {row.get('summary', '')}"
-                    
+
                     # Análisis de sentimiento
                     sentiment_result = analyzer.analyze_sentiment(text)
                     sentiments.append(sentiment_result['sentiment'])
-                    
+
                     # Análisis de emociones
                     emotion = analyze_emotion_with_deepseek(text)
                     emotions.append(emotion)
-                    
+
                     progress_bar.progress((idx + 1) / len(df))
-                
+
                 df['sentiment'] = sentiments
                 df['emotion'] = emotions
                 progress_bar.empty()
@@ -294,7 +297,7 @@ def perform_search(keyword_to_search, days, categories, use_google, use_bing):
                     row = df.iloc[idx]
                     summary = analyzer.summarize_article(row['title'], row.get('summary', ''))
                     df.at[df.index[idx], 'summary_ai'] = summary
-        
+
         return df
 
 # Ejecutar búsqueda
@@ -307,7 +310,7 @@ if search_button and keyword:
         use_bing_news
     )
     st.session_state.current_keyword = keyword
-    
+
     # Guardar en historial
     if not st.session_state.current_results.empty:
         st.session_state.search_history.append({
@@ -318,11 +321,12 @@ if search_button and keyword:
 
 # Mostrar resultados
 df = st.session_state.current_results
+
 if not df.empty and 'current_keyword' in st.session_state:
     keyword_searched = st.session_state.current_keyword
-    
+
     st.markdown("---")
-    
+
     # Métricas
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -335,13 +339,13 @@ if not df.empty and 'current_keyword' in st.session_state:
     with col4:
         avg_mentions = df['keyword_matches'].mean() if 'keyword_matches' in df.columns else 1.0
         st.metric("📈 Promedio", f"{avg_mentions:.1f}")
-    
+
     # Análisis de Crisis
     st.markdown("---")
     st.header(f"🚨 Análisis de Riesgo: '{keyword_searched}'")
-    
+
     crisis_data = analyzer.detect_crisis_signals(df)
-    
+
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         color_map = {"BAJO": "🟢", "MEDIO": "🟡", "ALTO": "🟠", "CRÍTICO": "🔴"}
@@ -354,17 +358,16 @@ if not df.empty and 'current_keyword' in st.session_state:
     with col4:
         positive_count = len(df[df['sentiment'] == 'POSITIVO'])
         st.metric("Positivas", positive_count)
-    
+
     if crisis_data.get('analysis'):
         st.info(f"**💡 Análisis:** {crisis_data['analysis']}")
-    
+
     # Visualizaciones
-       # Visualizaciones
     st.markdown("---")
     st.header("📊 Análisis de Cobertura")
-    
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
         st.subheader("Distribución de Sentimiento")
         sentiment_counts = df['sentiment'].value_counts()
@@ -379,7 +382,7 @@ if not df.empty and 'current_keyword' in st.session_state:
             }
         )
         st.plotly_chart(fig, use_container_width=True)
-    
+
     with col2:
         st.subheader("Top Medios")
         source_counts = df['source'].value_counts().head(10)
@@ -391,12 +394,12 @@ if not df.empty and 'current_keyword' in st.session_state:
         )
         fig.update_layout(showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
-      
-    # AGREGAR ESTE BLOQUE AQUÍ - Gráfico de Emociones
+
+    # GRÁFICO DE EMOCIONES - COLOCADO CORRECTAMENTE
     st.subheader("😊 Distribución de Emociones")
     if 'emotion' in df.columns:
         emotion_counts = df['emotion'].value_counts()
-        
+
         # Usar colores específicos para cada emoción
         emotion_colors = {
             'RISA': '#FFD700',
@@ -408,9 +411,9 @@ if not df.empty and 'current_keyword' in st.session_state:
             'NEUTRAL': '#808080',
             'DESCONOCIDO': '#A9A9A9'
         }
-        
+
         colors = [emotion_colors.get(emotion, '#636EFA') for emotion in emotion_counts.index]
-        
+
         fig = px.bar(
             x=emotion_counts.values,
             y=emotion_counts.index,
@@ -423,64 +426,15 @@ if not df.empty and 'current_keyword' in st.session_state:
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.warning("No hay datos de emociones disponibles")
-    
-    # Timeline (continúa con el código que ya tienes)
-    st.subheader("📅 Evolución Temporal")
-    df['date'] = pd.to_datetime(df['published'], errors='coerce')
-    st.markdown("---")
-    st.header("📊 Análisis de Cobertura")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Distribución de Sentimiento")
-        sentiment_counts = df['sentiment'].value_counts()
-        fig = px.pie(
-            values=sentiment_counts.values,
-            names=sentiment_counts.index,
-            color=sentiment_counts.index,
-            color_discrete_map={
-                'POSITIVO': '#00CC96', 
-                'NEUTRAL': '#636EFA', 
-                'NEGATIVO': '#EF553B'
-            }
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        st.subheader("Top Medios")
-        source_counts = df['source'].value_counts().head(10)
-        fig = px.bar(
-            x=source_counts.values,
-            y=source_counts.index,
-            orientation='h',
-            labels={'x': 'Cantidad', 'y': 'Medio'}
-        )
-        fig.update_layout(showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
-        # Nueva visualización de emociones (DEBE ESTAR DESPUÉS DEL GRÁFICO DE TOP MEDIOS)
-    if 'emotion' in df.columns:
-        st.subheader("😊 Distribución de Emociones")
-        emotion_counts = df['emotion'].value_counts()
-        fig = px.bar(
-            x=emotion_counts.values,
-            y=emotion_counts.index,
-            orientation='h',
-            labels={'x': 'Cantidad', 'y': 'Emoción'},
-            color=emotion_counts.values,
-            color_continuous_scale='Viridis'
-        )
-        fig.update_layout(showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
-    
+
     # Timeline
     st.subheader("📅 Evolución Temporal")
     df['date'] = pd.to_datetime(df['published'], errors='coerce')
     df['date_only'] = df['date'].dt.date
-    
+
     if df['date_only'].notna().any():
         timeline = df.groupby(['date_only', 'sentiment']).size().unstack(fill_value=0)
-        
+
         fig = go.Figure()
         color_map = {'POSITIVO': '#00CC96', 'NEUTRAL': '#636EFA', 'NEGATIVO': '#EF553B'}
         for sentiment in timeline.columns:
@@ -493,11 +447,11 @@ if not df.empty and 'current_keyword' in st.session_state:
             ))
         fig.update_layout(xaxis_title="Fecha", yaxis_title="Cantidad")
         st.plotly_chart(fig, use_container_width=True)
-    
+
     # Lista de noticias
     st.markdown("---")
     st.header(f"📋 Noticias sobre '{keyword_searched}'")
-    
+
     # Filtros
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -518,13 +472,13 @@ if not df.empty and 'current_keyword' in st.session_state:
             "Ordenar por",
             ["Fecha (reciente)", "Menciones (mayor)", "Relevancia"]
         )
-    
+
     # Aplicar filtros
     filtered_df = df[
         (df['sentiment'].isin(sentiment_filter)) &
         (df['source'].isin(sources_filter))
     ]
-    
+
     if sort_by == "Fecha (reciente)":
         filtered_df = filtered_df.sort_values('date', ascending=False)
     elif sort_by == "Menciones (mayor)":
@@ -533,45 +487,45 @@ if not df.empty and 'current_keyword' in st.session_state:
     else:
         if 'relevance_score' in filtered_df.columns:
             filtered_df = filtered_df.sort_values('relevance_score', ascending=False)
-    
+
     st.markdown(f"**Mostrando {len(filtered_df)} de {len(df)} noticias**")
-    
+
     # Mostrar noticias
     for idx, row in filtered_df.head(50).iterrows():
         sentiment_emoji = {"POSITIVO": "😊", "NEGATIVO": "😟", "NEUTRAL": "😐"}
         emotion_emoji = {"RISA": "😂", "IRA": "😠", "MIEDO": "😨", "TRISTEZA": "😢", 
                         "DISGUSTO": "🤢", "SORPRESA": "😲", "NEUTRAL": "😐"}
-        
+
         title_display = row['title'].replace(keyword_searched, f"**{keyword_searched}**")
-        
+
         matches_info = ""
         if 'keyword_matches' in row and row['keyword_matches'] > 0:
             matches_info = f" | {int(row['keyword_matches'])} menciones"
-        
+
         emotion_info = ""
         if 'emotion' in row:
             emotion_info = f" | {emotion_emoji.get(row['emotion'], '😐')} {row['emotion']}"
-        
+
         with st.expander(
             f"{sentiment_emoji.get(row['sentiment'], '📰')} {row['source']} | "
             f"{row['sentiment']}{emotion_info}{matches_info}"
         ):
             st.markdown(f"### {title_display}")
-            
+
             col1, col2 = st.columns([3, 1])
-            
+
             with col1:
                 if row.get('summary'):
                     st.markdown("**Resumen:**")
                     summary_display = row['summary'].replace(keyword_searched, f"**{keyword_searched}**")
                     st.markdown(summary_display)
-                
+
                 if row.get('summary_ai') and row['summary_ai'] != row.get('summary'):
                     st.markdown("**Análisis IA:**")
                     st.info(row['summary_ai'])
-                
+
                 st.markdown(f"🔗 [Leer noticia completa]({row['link']})")
-            
+
             with col2:
                 st.metric("Sentimiento", row['sentiment'])
                 if 'emotion' in row:
@@ -582,20 +536,19 @@ if not df.empty and 'current_keyword' in st.session_state:
                     st.caption(f"📅 {row['date'].strftime('%Y-%m-%d %H:%M')}")
                 if 'category' in row:
                     st.caption(f"🏷️ {row['category']}")
-    
-    # Sección de Resumen y Email
-       # Exportar y Resumen
+
+    # Exportar y Resumen
     st.markdown("---")
     st.header("📊 Resumen y Exportación")
-    
+
     # Botón para generar resumen
     if st.button("📋 Generar Resumen Consolidado", type="primary", use_container_width=True):
         summary_text = generate_analysis_summary(df, keyword_searched)
         st.session_state.summary_text = summary_text
-        
+
         with st.expander("📊 Ver Resumen Completo", expanded=True):
             st.text(summary_text)
-    
+
     # Botones de descarga
     col1, col2 = st.columns(2)
     with col1:
@@ -607,7 +560,7 @@ if not df.empty and 'current_keyword' in st.session_state:
             mime="text/csv",
             use_container_width=True
         )
-    
+
     with col2:
         if hasattr(st.session_state, 'summary_text'):
             st.download_button(
@@ -617,12 +570,12 @@ if not df.empty and 'current_keyword' in st.session_state:
                 mime="text/plain",
                 use_container_width=True
             )
-    
+
     # Sección de envío por email
     if hasattr(st.session_state, 'summary_text'):
         st.markdown("---")
         st.subheader("📧 Enviar Resumen por Email")
-        
+
         col1, col2 = st.columns([3, 1])
         with col1:
             recipient_email = st.text_input(
@@ -634,7 +587,7 @@ if not df.empty and 'current_keyword' in st.session_state:
             st.write("")
             st.write("")
             send_button = st.button("📤 Enviar Email", type="primary", use_container_width=True)
-        
+
         if send_button:
             if not recipient_email:
                 st.error("❌ Por favor ingresa un email válido")
@@ -661,10 +614,10 @@ elif keyword and search_button:
 
 else:
     st.info("👆 Ingresa un término en el buscador para comenzar")
-    
+
     st.markdown("---")
     st.subheader("📚 Ejemplos de Búsquedas")
-    
+
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown("**🏛️ Política**")
@@ -682,4 +635,3 @@ st.caption(
     f"Última actualización: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
     f"Powered by DeepSeek AI | 100% Gratuito"
 )
-
