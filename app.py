@@ -318,7 +318,6 @@ if search_button and keyword:
 
 # Mostrar resultados
 df = st.session_state.current_results
-
 if not df.empty and 'current_keyword' in st.session_state:
     keyword_searched = st.session_state.current_keyword
     
@@ -391,8 +390,7 @@ if not df.empty and 'current_keyword' in st.session_state:
         )
         fig.update_layout(showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
-    
-    # Nueva visualización de emociones
+        # Nueva visualización de emociones (DEBE ESTAR DESPUÉS DEL GRÁFICO DE TOP MEDIOS)
     if 'emotion' in df.columns:
         st.subheader("😊 Distribución de Emociones")
         emotion_counts = df['emotion'].value_counts()
@@ -518,20 +516,21 @@ if not df.empty and 'current_keyword' in st.session_state:
                     st.caption(f"🏷️ {row['category']}")
     
     # Sección de Resumen y Email
+       # Exportar y Resumen
     st.markdown("---")
     st.header("📊 Resumen y Exportación")
     
+    # Botón para generar resumen
+    if st.button("📋 Generar Resumen Consolidado", type="primary", use_container_width=True):
+        summary_text = generate_analysis_summary(df, keyword_searched)
+        st.session_state.summary_text = summary_text
+        
+        with st.expander("📊 Ver Resumen Completo", expanded=True):
+            st.text(summary_text)
+    
+    # Botones de descarga
     col1, col2 = st.columns(2)
-    
     with col1:
-        if st.button("📋 Generar Resumen Consolidado", use_container_width=True):
-            summary_text = generate_analysis_summary(df, keyword_searched)
-            st.session_state.summary_text = summary_text
-            
-            with st.expander("📊 Ver Resumen Completo", expanded=True):
-                st.text(summary_text)
-    
-    with col2:
         csv = filtered_df.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📥 Descargar CSV",
@@ -541,23 +540,28 @@ if not df.empty and 'current_keyword' in st.session_state:
             use_container_width=True
         )
     
-    # Descargar resumen si existe
+    with col2:
+        if hasattr(st.session_state, 'summary_text'):
+            st.download_button(
+                label="⬇️ Descargar Resumen",
+                data=st.session_state.summary_text,
+                file_name=f"resumen_{keyword_searched}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                mime="text/plain",
+                use_container_width=True
+            )
+    
+    # Sección de envío por email
     if hasattr(st.session_state, 'summary_text'):
-        st.download_button(
-            label="⬇️ Descargar Resumen",
-            data=st.session_state.summary_text,
-            file_name=f"resumen_analisis_{keyword_searched}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-            mime="text/plain",
-            use_container_width=True
-        )
-        
-        # Sección de envío por email
-        st.divider()
+        st.markdown("---")
         st.subheader("📧 Enviar Resumen por Email")
         
         col1, col2 = st.columns([3, 1])
         with col1:
-            recipient_email = st.text_input("Email del destinatario:", placeholder="ejemplo@email.com")
+            recipient_email = st.text_input(
+                "Email del destinatario:",
+                placeholder="ejemplo@email.com",
+                key="recipient_email_input"
+            )
         with col2:
             st.write("")
             st.write("")
@@ -568,12 +572,18 @@ if not df.empty and 'current_keyword' in st.session_state:
                 st.error("❌ Por favor ingresa un email válido")
             elif not EMAIL_SENDER or not EMAIL_PASSWORD:
                 st.error("❌ Configura las credenciales de email en secrets")
+                st.info("💡 Crea un archivo .streamlit/secrets.toml con:\nemail_sender = \"tu_email@gmail.com\"\nemail_password = \"tu_app_password\"")
             else:
                 with st.spinner("Enviando email..."):
-                    subject = f"Resumen de Análisis: {keyword_searched}"
-                    success, message = send_email_summary(recipient_email, subject, st.session_state.summary_text)
+                    subject = f"Resumen de Análisis de Noticias: {keyword_searched}"
+                    success, message = send_email_summary(
+                        recipient_email,
+                        subject,
+                        st.session_state.summary_text
+                    )
                     if success:
                         st.success(message)
+                        st.balloons()
                     else:
                         st.error(message)
 
@@ -604,3 +614,4 @@ st.caption(
     f"Última actualización: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
     f"Powered by DeepSeek AI | 100% Gratuito"
 )
+
