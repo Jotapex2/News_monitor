@@ -246,11 +246,22 @@ def perform_search(keyword_to_search, days, categories, use_google, use_bing):
 
         # Realizar búsqueda
         df = aggregator.aggregate_all_free(
-            keyword_to_search, 
+            keyword_to_search,
             filtered_sources,
             use_google_news=use_google,
             use_bing_news=use_bing
         )
+
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        # --- Filtrar por fecha (últimos N días) ---
+        if 'published' in df.columns:
+            df['published_dt'] = pd.to_datetime(df['published'], errors='coerce', utc=True)
+            cutoff = (datetime.utcnow() - timedelta(days=days)).replace(tzinfo=None)
+            # published_dt es UTC-aware; pasamos cutoff a UTC-aware
+            cutoff_utc = pd.Timestamp(cutoff, tz="UTC")
+            df = df[df['published_dt'].notna() & (df['published_dt'] >= cutoff_utc)]
 
         if df.empty:
             return df
@@ -262,46 +273,44 @@ def perform_search(keyword_to_search, days, categories, use_google, use_bing):
         if df.empty:
             return df
 
-        # Análisis de sentimiento y emociones
+        # Reset index para que el loop/progress sea 100% consistente
+        df = df.reset_index(drop=True)
+
+        # --- Análisis de sentimiento y emociones ---
         with st.spinner("Analizando sentimientos y emociones..."):
             sentiments = []
             emotions = []
 
-            if len(df) > 0:
-                progress_bar = st.progress(0)
-                total_rows = len(df)
+            total_rows = len(df)
+            progress_bar = st.progress(0.0)
 
-                # CORRECCIÓN: Usar enumerate para índice secuencial
-                for idx, (_, row) in enumerate(df.iterrows()):
-                    text = f"{row['title']} {row.get('summary', '')}"
+            for i, row in df.iterrows():
+                text = f"{row.get('title', '')} {row.get('summary', '')}"
 
-                    # Análisis de sentimiento
-                    sentiment_result = analyzer.analyze_sentiment(text)
-                    sentiments.append(sentiment_result['sentiment'])
+                # Sentimiento
+                sentiment_result = analyzer.analyze_sentiment(text)
+                sentiments.append(sentiment_result.get('sentiment', 'NEUTRAL'))
 
-                    # Análisis de emociones
-                    emotion = analyze_emotion_with_deepseek(text)
-                    emotions.append(emotion)
+                # Emoción
+                emotions.append(analyze_emotion_with_deepseek(text))
 
-                    # Actualizar progress bar con índice correcto
-                    progress_value = min(1.0, (idx + 1) / total_rows)
-                    progress_bar.progress(progress_value)
+                # Progress SIEMPRE en [0.0, 1.0]
+                progress = (i + 1) / total_rows
+                progress_bar.progress(min(1.0, max(0.0, float(progress))))
 
-                df['sentiment'] = sentiments
-                df['emotion'] = emotions
-                progress_bar.empty()
-            else:
-                df['sentiment'] = []
-                df['emotion'] = []
+            progress_bar.progress(1.0)
+            progress_bar.empty()
 
-        # Resúmenes con IA (primeros 5)
+            df['sentiment'] = sentiments
+            df['emotion'] = emotions
+
+        # --- Resúmenes con IA (primeros 5) ---
         with st.spinner("Generando resúmenes con IA..."):
             df['summary_ai'] = df.get('summary', '')
-            if len(df) > 0:
-                for idx in range(min(5, len(df))):
-                    row = df.iloc[idx]
-                    summary = analyzer.summarize_article(row['title'], row.get('summary', ''))
-                    df.at[df.index[idx], 'summary_ai'] = summary
+            for i in range(min(5, len(df))):
+                row = df.iloc[i]
+                summary = analyzer.summarize_article(row.get('title', ''), row.get('summary', ''))
+                df.at[i, 'summary_ai'] = summary
 
         return df
 
