@@ -359,6 +359,74 @@ if not df.empty and 'current_keyword' in st.session_state:
         st.info(f"**💡 Análisis:** {crisis_data['analysis']}")
     
     # Visualizaciones
+       # Visualizaciones
+    st.markdown("---")
+    st.header("📊 Análisis de Cobertura")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Distribución de Sentimiento")
+        sentiment_counts = df['sentiment'].value_counts()
+        fig = px.pie(
+            values=sentiment_counts.values,
+            names=sentiment_counts.index,
+            color=sentiment_counts.index,
+            color_discrete_map={
+                'POSITIVO': '#00CC96', 
+                'NEUTRAL': '#636EFA', 
+                'NEGATIVO': '#EF553B'
+            }
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.subheader("Top Medios")
+        source_counts = df['source'].value_counts().head(10)
+        fig = px.bar(
+            x=source_counts.values,
+            y=source_counts.index,
+            orientation='h',
+            labels={'x': 'Cantidad', 'y': 'Medio'}
+        )
+        fig.update_layout(showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+      
+    # AGREGAR ESTE BLOQUE AQUÍ - Gráfico de Emociones
+    st.subheader("😊 Distribución de Emociones")
+    if 'emotion' in df.columns:
+        emotion_counts = df['emotion'].value_counts()
+        
+        # Usar colores específicos para cada emoción
+        emotion_colors = {
+            'RISA': '#FFD700',
+            'IRA': '#FF4500',
+            'MIEDO': '#8B008B',
+            'TRISTEZA': '#4169E1',
+            'DISGUSTO': '#228B22',
+            'SORPRESA': '#FF69B4',
+            'NEUTRAL': '#808080',
+            'DESCONOCIDO': '#A9A9A9'
+        }
+        
+        colors = [emotion_colors.get(emotion, '#636EFA') for emotion in emotion_counts.index]
+        
+        fig = px.bar(
+            x=emotion_counts.values,
+            y=emotion_counts.index,
+            orientation='h',
+            labels={'x': 'Cantidad', 'y': 'Emoción'},
+            title="Emociones Detectadas en las Noticias"
+        )
+        fig.update_traces(marker_color=colors)
+        fig.update_layout(showlegend=False, height=400)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("No hay datos de emociones disponibles")
+    
+    # Timeline (continúa con el código que ya tienes)
+    st.subheader("📅 Evolución Temporal")
+    df['date'] = pd.to_datetime(df['published'], errors='coerce')
     st.markdown("---")
     st.header("📊 Análisis de Cobertura")
     
